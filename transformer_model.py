@@ -296,8 +296,161 @@ class ResidualConnection(nn.Module):
         '''
         return x + self.dropout(sublayer(self.norm(x)))
 
-        
-        
+# Encoder Block
+class EncoderBlock(nn.Module):
+    '''
+    Encoder block consists of:
+    - Multihead self-attention layer
+    - Residual connection
+    - Feed forward network
+    - Residual connection
+    Args:
+        self_attention: nn.Module: the multihead self-attention layer
+        ffn: nn.Module: the feed forward network
+        dropout: float: the dropout rate (default= 0)
+    Returns:
+        encoder_block: tensor: the encoder block for the transformer model
+    '''        
+    def __init__(self, self_attention: MultiheadAttention, feed_forward_network: FFN, dropout: float) -> None:
+        super(EncoderBlock, self).__init__()
+        self.self_attention = self_attention
+        self.feed_forward_network = feed_forward_network
+        self.residual_connection_1 = ResidualConnection(dropout)
+        self.residual_connection_2 = ResidualConnection(dropout)
+
+    def forward(self, x, mask):
+        '''
+        args:
+            x: tensor: the input embedding vectors of shape (batch_size, seq_len, d_model)
+            mask: tensor: the mask to be applied to the input embedding vectors of shape (batch_size, seq_len, seq_len)
+        Returns:
+            encoder_block: tensor: the output of the encoder block of shape (batch_size, seq_len, d_model)
+        '''
+        x = self.residual_connection_1(x, lambda x: self.self_attention(x, x, x, mask))
+        x = self.residual_connection_2(x, self.feed_forward_network)
+        return x
+
+# Encoder consists of N encoder blocks 
+class Encoder(nn.Module):
+    '''
+    Encoder consists of N encoder blocks
+    Args:
+        layers or encoder_blocks: nn.ModuleList: the list of encoder blocks
+    Returns:
+        encoder: tensor: the encoder for the transformer model
+    '''
+    def __init__(self, encoder_blocks: nn.ModuleList) -> None:
+        super(Encoder, self).__init__()
+        self.encoder_blocks = encoder_blocks
+        self.norm = LayerNormalization()
+
+    def forward(self, x, mask):
+        '''
+        args:
+            x: tensor: the input embedding vectors of shape (batch_size, seq_len, d_model)
+            mask: tensor: the mask to be applied to the input embedding vectors of shape (batch_size, seq_len, seq_len)
+        Returns:
+            encoder: tensor: the output of the encoder of shape (batch_size, seq_len, d_model)
+        '''
+        for encoder_block in self.encoder_blocks: # iterating through the encoder blocks (layers)
+            x = encoder_block(x, mask)
+        return self.norm(x)
+
+# Decoder Block
+class DecoderBlock(nn.Module):
+    '''
+    Decoder block consists of:
+    - Multihead self-attention layer
+    - Residual connection
+    - Multihead masked self-attention layer
+    - Residual connection
+    - Feed forward network
+    - Residual connection
+    Args:
+        self_attention: MultiheadAttention: the multihead self-attention layer
+        cross_attention: MultiheadAttention: the multihead masked self-attention layer
+        ffn: nn.Module: the feed forward network
+        dropout: float: the dropout rate (default= 0)
+    Returns:
+        decoder_block: tensor: the decoder block for the transformer model
+    '''
+    def __init__(self, self_attention: MultiheadAttention, cross_attention: MultiheadAttention, feed_forward_network: FFN, dropout: float) -> None:
+        super(DecoderBlock, self).__init__()
+        self.self_attention = self_attention
+        self.cross_attention = cross_attention
+        self.feed_forward_network = feed_forward_network
+        # Three residual connections
+        self.residual_connection = nn.ModuleList([ResidualConnection(dropout) for _ in range(3)])
+
+    def forward(self, x, encoder_output, src_mask, tgt_mask):
+        '''
+        args:
+            x: tensor: the input embedding vectors of shape (batch_size, seq_len, d_model)
+            encoder_output: tensor: the output of the encoder of shape (batch_size, seq_len, d_model)
+            src_mask: tensor: the mask to be applied to the input embedding vectors of shape (batch_size, seq_len, seq_len)
+            tgt_mask: tensor: the mask to be applied to the input embedding vectors of shape (batch_size, seq_len, seq_len)
+        Returns:
+            decoder_block: tensor: the output of the decoder block of shape (batch_size, seq_len, d_model)
+        '''
+        x = self.residual_connection[0](x, lambda x: self.self_attention(x, x, x, tgt_mask))
+        x = self.residual_connection[1](x, lambda x: self.cross_attention(x, encoder_output, encoder_output, src_mask))
+        x = self.residual_connection[2](x, self.feed_forward_network)
+        return x
+
+# Decoder consists of N decoder blocks
+class Decoder(nn.Module):
+    '''
+    Decoder consists of N decoder blocks
+    Args:
+        layers or decoder_blocks: nn.ModuleList: the list of decoder blocks
+    Returns:
+        decoder: tensor: the decoder for the transformer model
+    '''
+    def __init__(self, decoder_blocks: nn.ModuleList) -> None:
+        super(Decoder, self).__init__()
+        self.decoder_blocks = decoder_blocks
+        self.norm = LayerNormalization()
+
+    def forward(self, x, encoder_output, src_mask, tgt_mask):
+        '''
+        args:
+            x: tensor: the input embedding vectors of shape (batch_size, seq_len, d_model)
+            encoder_output: tensor: the output of the encoder of shape (batch_size, seq_len, d_model)
+            src_mask: tensor: the mask to be applied to the input embedding vectors of shape (batch_size, seq_len, seq_len)
+            tgt_mask: tensor: the mask to be applied to the input embedding vectors of shape (batch_size, seq_len, seq_len)
+        Returns:
+            decoder: tensor: the output of the decoder of shape (batch_size, seq_len, d_model)
+        '''
+        for decoder_block in self.decoder_blocks: # iterating through the decoder blocks (layers)
+            x = decoder_block(x, encoder_output, src_mask, tgt_mask)
+        return self.norm(x)
+
+# Linear Layer
+class LinearLayer(nn.Module):
+    '''
+    Linear layer is used to convert the output of the transformer model to the output vocabulary size
+    Args:
+        d_model: int: the dimension of the model (default= 512) also known as the embedding size
+        vocab_size: int: the size of the vocabulary (depends on the dataset)
+    Returns:
+        linear_layer: tensor: the linear layer for the transformer model
+    '''
+    def __init__(self, d_model: int, vocab_size: int) -> None:
+        super(LinearLayer, self).__init__()
+        self.lin = nn.Linear(d_model, vocab_size)
+
+    def forward(self, x):
+        '''
+        args:
+            x: tensor: the input embedding vectors of shape (batch_size, seq_len, d_model)
+        Returns:
+            linear_layer: tensor: the output of the linear layer of shape (batch_size, seq_len, vocab_size)
+            also apply the softmax function to the output to get the probabilities of the output tokens
+        '''
+        return torch.log_softmax(self.lin(x), dim=-1) # log_softmax is used to calculate the log of the softmax function for numerical stability
+
+
+       
 
 
 
