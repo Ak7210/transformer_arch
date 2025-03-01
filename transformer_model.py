@@ -450,7 +450,109 @@ class LinearLayer(nn.Module):
         return torch.log_softmax(self.lin(x), dim=-1) # log_softmax is used to calculate the log of the softmax function for numerical stability
 
 
-       
+# Now connect all the components to create the transformer model
+class Transformer(nn.Module):
+    '''
+    This class is used to create the transformer model
+    Args:
+        src_embedding: InputEmbedding : the input embedding layer
+        trg_embedding: InputEmbedding: the target embedding layer
+        src_postional_encoding: PositionalEncoding: the positional encoding layer for the source
+        trg_postional_encoding: PositionalEncoding: the positional encoding layer for the target
+        encoder: Encoder: the encoder
+        decoder: Decoder: the decoder
+        linear_layer: LinearLayer: the linear layer
+    Returns:
+        transformer: tensor: the transformer model
+    '''   
+    def __init__(self, src_embedding: InputEmbedding, tgt_embedding: InputEmbedding, src_postional_encoding: PositionalEncoding, tgt_postional_encoding: PositionalEncoding, encoder: Encoder, decoder: Decoder, linear_layer: LinearLayer) -> None:
+        super(Transformer, self).__init__()
+        self.src_embedding = src_embedding
+        self.tgt_embedding = tgt_embedding
+        self.src_postional_encoding = src_postional_encoding
+        self.tgt_postional_encoding = tgt_postional_encoding
+        self.encoder = encoder
+        self.decoder = decoder
+        self.linear_layer = linear_layer
+
+    def encode(self, src, src_mask):
+        '''
+        args:
+            src: tensor: the input tokens of shape (batch_size, seq_len)
+            src_mask: tensor: the mask to be applied to the input embedding vectors of shape (batch_size, seq_len, seq_len)
+        Returns:
+            encoder_output: tensor: the output of the encoder of shape (batch_size, seq_len, d_model)
+        '''
+        src = self.src_postional_encoding(self.src_embedding(src))
+        return self.encoder(src, src_mask)
+    
+    def decode(self, target, encoder_output, src_mask, tgt_mask):
+        '''
+        args:
+            trg: tensor: the target tokens of shape (batch_size, seq_len)
+            encoder_output: tensor: the output of the encoder of shape (batch_size, seq_len, d_model)
+            src_mask: tensor: the mask to be applied to the input embedding vectors of shape (batch_size, seq_len, seq_len)
+            tgt_mask: tensor: the mask to be applied to the input embedding vectors of shape (batch_size, seq_len, seq_len)
+        Returns:
+            decoder_output: tensor: the output of the decoder of shape (batch_size, seq_len, d_model)
+        '''
+        target = self.trg_postional_encoding(self.trg_embedding(target))
+        return self.decoder(target, encoder_output, src_mask, tgt_mask)
+
+    def linear_(self, x):
+        '''
+        args:
+            x: tensor: the input embedding vectors of shape (batch_size, seq_len, d_model)
+        Returns:
+            linear_layer: tensor: the output of the linear layer of shape (batch_size, seq_len, vocab_size)
+        '''
+        return self.linear_layer(x)
+
+
+# building the transformer model
+def build_transformer(src_vocab_size:int, tgt_vocab_size:int, src_seq_len: int, tgt_seq_len: int, d_model: int = 512, num_heads: int = 8, d_ff: int = 2048, num_encoder_blocks: int = 6, num_decoder_blocks: int = 6, dropout: float = 0.1) -> Transformer:
+    '''
+    This function is used to build the transformer model
+    Args:
+        src_vocab_size: int: the size of the source vocabulary
+        tgt_vocab_size: int: the size of the target vocabulary
+        src_seq_len: int: the maximum length of the source sequence
+        tgt_seq_len: int: the maximum length of the target sequence
+        d_model: int: the dimension of the model (default= 512) also known as the embedding size
+        num_heads: int: the number of attention heads (default= 4)
+        d_ff: int: the dimension of the feed forward network (default= 2048)
+        num_encoder_blocks: int: the number of encoder blocks (default= 6)
+        num_decoder_blocks: int: the number of decoder blocks (default= 6)
+        dropout: float: the dropout rate (default= 0.1)
+    Returns:
+        transformer: tensor: the transformer model
+    '''
+    src_embedding = InputEmbedding(d_model, src_vocab_size)
+    tgt_embedding = InputEmbedding(d_model, tgt_vocab_size)
+    src_postional_encoding = PositionalEncoding(d_model, src_seq_len, dropout)
+    tgt_postional_encoding = PositionalEncoding(d_model, tgt_seq_len, dropout)
+
+    encoder_blocks = nn.ModuleList([EncoderBlock(MultiheadAttention(d_model, num_heads, dropout), FFN(d_model, d_ff, dropout), dropout) for _ in range(num_encoder_blocks)])
+
+    encoder = Encoder(encoder_blocks)
+
+    decoder_blocks = nn.ModuleList([DecoderBlock(MultiheadAttention(d_model, num_heads, dropout), MultiheadAttention(d_model, num_heads, dropout), FFN(d_model, d_ff, dropout), dropout) for _ in range(num_decoder_blocks)]) # fist one for self-attention and second one for cross-attention
+
+    decoder = Decoder(decoder_blocks)
+
+    linear_layer = LinearLayer(d_model, tgt_vocab_size)
+
+    # creating the transformer model
+    transformer = Transformer(src_embedding, tgt_embedding, src_postional_encoding, tgt_postional_encoding, encoder, decoder, linear_layer)
+
+    # Intializing the weights
+    for p in transformer.parameters():
+        if p.dim() > 1:
+            nn.init.xavier_uniform_(p)
+    return transformer
+
+
+
 
 
 
