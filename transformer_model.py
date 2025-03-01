@@ -268,8 +268,36 @@ class MultiheadAttention(nn.Module):
 
 class ResidualConnection(nn.Module):
     '''
-        
+        It's also know as skip connection
+        This class is used to create the residual connection for the transformer model
+
+        Args:
+            d_model: int: the dimension of the model (default= 512) also known as the embedding size
+            dropout: float: the dropout rate (default= 0)
+            sublayer: nn.Module: the sublayers (Multihead self-attention layer or ffn) to be added to the residual connection
+
+        Returns:
+            residual_connection: tensor: the residual connection for the transformer model
     '''
+    def __init__(self, dropout: float) -> None:
+        super(ResidualConnection, self).__init__()
+        
+        self.dropout = nn.Dropout(dropout)
+        self.norm = LayerNormalization()
+
+    def forward(self, x, sublayer):
+        '''
+        This function is used to add the sublayer to the residual connection
+        Args:
+            x: tensor: the input embedding vectors of shape (batch_size, seq_len, d_model)
+            sublayer: nn.Module: the sublayers (Multihead self-attention layer or ffn) to be added to the residual connection
+        Returns:
+            residual_connection: tensor: the output of the residual connection of shape (batch_size, seq_len, d_model)
+        '''
+        return x + self.dropout(sublayer(self.norm(x)))
+
+        
+        
 
 
 
