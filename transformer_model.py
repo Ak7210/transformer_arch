@@ -182,9 +182,97 @@ class FFN(nn.module):
         ffn = self.fc2(x)
         return ffn
 
+# 5. Multi-Head Attention
+
+class MultiheadAttention(nn.Module):
+    '''
+    - This class is used to create the multi-head attention layer for the transformer model
+    - used to calculate the attention scores between the input embedding vectors
+    Args:
+        d_model: int: the dimension of the model (default= 512) also known as the embedding size
+        num_heads: int: the number of attention heads (default= 4)
+        dropout: float: the dropout rate (default= 0)
+    Returns:
+        multihead_attention: tensor: the multi-head attention layer for the transformer model
+    
+    '''
+    def __init__(self, d_model: int, num_heads: int = 4, dropout: float = 0) -> None:
+        super(MultiheadAttention, self).__init__()
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.dropout = nn.Dropout(dropout)
+        # to make sure the d_model is divisible by the number of heads
+        assert d_model % self.num_heads == 0
+        self.d_k = d_model // self.num_heads # d_k is the dimension of the key and value vectors
+        '''
+            - d_k is the dimension of the key and value vectors
+            - w_q is the weight matrix for the query vectors of shape (d_model, d_model)
+            - w_k is the weight matrix for the key vectors of shape (d_model, d_model)
+            - w_v is the weight matrix for the value vectors of shape (d_model, d_model)
+            - w_o is the weight matrix for the output vectors of shape (d_model, d_model)
+            nn.Linear is used to create a linear layer and it applies a linear transformation y = xW^T + b
+        '''
+        self.w_q = nn.Linear(self.d_model, self.d_model)
+        self.w_k = nn.Linear(self.d_model, self.d_model)
+        self.w_v = nn.Linear(self.d_model, self.d_model)
+        self.w_o = nn.Linear(self.d_model, self.d_model) #d_model = d_k*num_heads and d_k == d_v
+
+        @staticmethod
+        def attention_block(query, key, value, mask, dropout: nn.Dropout):
+            '''
+            shape of the query is (batch_size, num_heads, seq_len, d_k)
+            extract the d_k dimension from the query tensor
+            '''
+            d_k = query.shape[-1]
+            attention_score = torch.matmul(query, key.transpose(-2, -1))/math.sqrt(d_k) # calculating the attention scores
+            if mask is not None:
+                attention_score = attention_score.masked_fill(mask == 0, -1e9) # applying the mask to the attention scores
+            attention_score = nn.softmax(attention_score, dim = -1) # applying the softmax function to the attention scores
+            if dropout is not None:
+                aention_score = dropout(attention_score) # applying the dropout to the attention scores
+
+            attention = torch.matmul(attention_score, value) # calculating the attention
+            return attention, attention_score
 
 
+        def forward(self, q, k, v, mask):
+            '''
+            self.w_q(q) is used to calculate the query vectors or applies the linear transformation to the query vectors
+            query = q @ w_q^T + b_q   
+            q: tensor: the query vectors of shape (batch_size, seq_len, d_model)
+            w_q: tensor: the weight matrix for the query vectors of shape (d_model, d_model)
+            b_q: tensor: the bias for the query vectors of shape (d_model)
+            query: tensor: the query vectors after the linear transformation of shape (batch_size, seq_len, d_model)
+                
+            '''
+            query = self.w_q(q) 
+            key = self.w_k(k)
+            value = self.w_v(v)
+            '''
+            - splitting the query, key, and value vectors into a number of heads so that we can calculate the attention scores in parallel
+            - splitingn the heads allows the model to focus on different aspects of the input sequence
+            - view is used to change the shape of the tensor to (batch_size, seq_len, num_heads, d_k)
+            - permute is used to change the dimensions of the tensor to (batch_size, num_heads, seq_len, d_k) : basically it's changing the position dimensions
+            '''
+            query = query.view(q.shape[0], q.shape[1], self.num_heads, self.d_k).permute(0, 2, 1, 3) 
+            key = key.view(k.shape[0], k.shape[1], self.num_heads, self.d_k).permute(0, 2, 1, 3)
+            value = value.view(v.shape[0], v.shape[1], self.num_heads, self.d_k).permute(0, 2, 1, 3)
 
+            x, self.attention_score = MultiheadAttention.attention_block(query, key, value, mask, self.dropout)
+
+            x = x.permute(0, 2, 1, 3).contiguous().view(q.shape[0], -1, self.d_model) # changing the dimensions of the tensor back to (batch_size, seq_len, d_model)
+            x = self.w_o(x)
+            return x
         
+# 6. Residual Connection
 
+class ResidualConnection(nn.Module):
+    '''
         
+    '''
+
+
+
+            
+
+    
