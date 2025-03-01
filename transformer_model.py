@@ -2,8 +2,8 @@
 working on the architecture of the transformer model:
 - 1. Input Embedding
 - 2. positional encoding
-- 3. feed forward network
-- 4. add and norm {layer normalization}
+- 3. Layer Normalization
+- 4. Feed Forward Network
 
 - 5. multi-head attention
 - 6. masked multi-head attention
@@ -111,6 +111,37 @@ class positional_encoding(nn.Module):
         x = x + self.positional_encoding[:, :x.shape[1], :].requires_grad_(False) #requires_grad_(False) is used to prevent the positional encoding matrix from being updated during the training
         x = self.dropout(x)
         return x
+
+# 3. Layer Normalization
+
+class LayerNormalization(nn.Module):
+    ''' This class is used to create the layer normalization layer for the transformer model
+    Args:
+        eps: float: a value added to the denominator for numerical stability (default= 1e-6)
+            so that the layer normalization does not divide by zero
+
+    Returns:
+        layer_norm: tensor: the layer normalization layer for the transformer model
+    '''
+    def __init__(self,  eps: float = 1e-6):
+        super(LayerNormalization, self).__init__()
+        self.eps = eps
+        self.alpha = nn.Parameter(torch.ones(1)) # creating a learnable parameter alpha: multiplicative
+        self.bias = nn.Parameter(torch.zeros(1)) # creating a learnable parameter bias: additive
+
+    def forward(self, x):
+        '''
+        This function is used to normalize the input embedding vectors
+        Args:
+            X: tensor: the input embedding vectors of shape (batch_size, seq_len, d_model)
+        returns:
+            layer_norm: tensor: normalized vectors (x*alpha + bias) of shape (batch_size, seq_len, d_model)
+
+        '''
+        mean = x.mean(dim = -1, keepdim=True) # dim = -1 is used to calculate the mean along the last dimension
+        std = x.std(dim = -1, keepdim=True)   
+        layer_norm = self.alpha*(x - mean)/(std + self.eps) + self.bias
+        return layer_norm
 
    
 
