@@ -72,7 +72,7 @@ class positional_encoding(nn.Module):
 
     Note: the positional encoding is added to the input embedding vectors to add the positional information to the input tokens
     ''''
-    def __init__(self, d_model: int, max_len: int = 512, dropout: float):
+    def __init__(self, d_model: int, max_len: int = 512, dropout: float) -> None:
         super(positional_encoding, self).__init__()
         self.d_model = d_model
         self.max_len = max_len
@@ -123,7 +123,7 @@ class LayerNormalization(nn.Module):
     Returns:
         layer_norm: tensor: the layer normalization layer for the transformer model
     '''
-    def __init__(self,  eps: float = 1e-6):
+    def __init__(self,  eps: float = 1e-6) -> None:
         super(LayerNormalization, self).__init__()
         self.eps = eps
         self.alpha = nn.Parameter(torch.ones(1)) # creating a learnable parameter alpha: multiplicative
@@ -143,7 +143,45 @@ class LayerNormalization(nn.Module):
         layer_norm = self.alpha*(x - mean)/(std + self.eps) + self.bias
         return layer_norm
 
-   
+# 4. Feed Forward Network
+
+class FFN(nn.module):
+    '''
+    This class is used to create the feed forward network for the transformer model
+    used the ReLU activation function and two linear layers
+    Args:
+        d_model: int: the dimension of the model (default= 512) also known as the embedding size
+        d_ff: int: the dimension of the feed forward network (default= 2048)
+        dropout: float: the dropout rate (default= 0)
+            
+    Returns:
+        ffn: tensor: the feed forward network for the transformer model
+        
+    '''
+    def __init__(self, d_model: int , d_ff : int = 2048, dropout: float = 0) -> None:
+        super(FFN, self).__init__()
+        self.d_model = d_model
+        self.d_ff = d_ff
+        self.dropout = nn.Dropout(dropout)
+        self.fc1 = nn.Linear(self.d_model, self.d_ff) # creating the first fully connected linear layer 
+        self.fc2 = nn.Linear(self.d_ff, self.d_model) # creating the second fully connected linear layer
+
+    def forward(self, x):
+        '''
+        This function is used to pass the input embedding vectors through the feed forward network
+        Args:
+            x: tensor: the input embedding vectors of shape (batch_size, seq_len, d_model)
+            batch_size: int: the size of the batch
+            seq_len: int: the length of each input sequence
+            d_model: int: the dimension of the model (default= 512) also known as the embedding size
+        Returns:
+            ffn: tensor: the output of the feed forward network of shape (batch_size, seq_len, d_model)
+        '''
+        x = nn.functional.relu(self.fc1(x)) # passing the input through the first linear layer and the ReLU activation function
+        x = self.dropout(x) # applying the dropout
+        ffn = self.fc2(x)
+        return ffn
+
 
 
 
