@@ -20,7 +20,7 @@ import numpy as np
 import math
 # 1. Input Embedding
 
-class input_embedding(nn.Module):
+class InputEmbedding(nn.Module):
 
     ''' This class is used to create the input embedding layer for the transformer model
          which is used to convert the input tokens into the embedding vectors of the same size as the model dimension 
@@ -33,9 +33,9 @@ class input_embedding(nn.Module):
         input_embedding: tensor: the input embedding layer for the transformer model
 
     Note: currently we are not using the padding index, but we can use it in the future for that we need to pass the padding index as an argument
-    ''''
+    '''
     def __init__(self, d_model: int, vocab_size : int, padding_idx: int = 0):
-        super(input_embedding, self).__init__()
+        super(InputEmbedding, self).__init__()
         self.d_model = d_model
         self.vocab_size = vocab_size    
         self.embedding = nn.Embedding(self.vocab_size, self.d_model, padding_idx= padding_idx) # creating the embedding layer using the nn.Embedding class 
@@ -59,7 +59,7 @@ class input_embedding(nn.Module):
 
 # 2. Positional Encoding
 
-class positional_encoding(nn.Module):
+class PositionalEncoding(nn.Module):
     
     ''' Transformers process input tokens in parallel and lack order information. 
         To address this, a positional encoding layer adds positional information using a positional encoding matrix, ensuring the model understands token order.
@@ -71,13 +71,14 @@ class positional_encoding(nn.Module):
         positional_encoding: tensor: the positional encoding layer for the transformer model
 
     Note: the positional encoding is added to the input embedding vectors to add the positional information to the input tokens
-    ''''
-    def __init__(self, d_model: int, max_len: int = 512, dropout: float) -> None:
-        super(positional_encoding, self).__init__()
+    '''
+    def __init__(self, d_model: int, max_len: int = 512, dropout: float=0.1) -> None:
+        super(PositionalEncoding, self).__init__()
         self.d_model = d_model
         self.max_len = max_len
         self.dropout = nn.Dropout(dropout) # adding the dropout layer to the positional encoding to prevent overfitting
-        self.positional_encoding = self.get_positional_encoding() # getting the positional encoding matrix
+        # self.positional_encoding = self.get_positional_encoding() # getting the positional encoding matrix
+        self.register_buffer('positional_encoding', self.get_positional_encoding())
 
 
 
@@ -145,7 +146,7 @@ class LayerNormalization(nn.Module):
 
 # 4. Feed Forward Network
 
-class FFN(nn.module):
+class FFN(nn.Module):
     '''
     This class is used to create the feed forward network for the transformer model
     used the ReLU activation function and two linear layers
