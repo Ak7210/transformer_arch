@@ -1,25 +1,3 @@
-'''
-working on the architecture of the transformer model:
-- 1. Input Embedding
-- 2. positional encoding
-- 3. Layer Normalization
-- 4. Feed Forward Network
-
-- 5. multi-head attention
-- 6. masked multi-head attention
-- 7. output embedding
-
-- transformer encoder
-- transformer decoder
-'''
-# Importing Libraries
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np  
-import math
-# 1. Input Embedding
-
 class InputEmbedding(nn.Module):
 
     ''' This class is used to create the input embedding layer for the transformer model
@@ -34,11 +12,11 @@ class InputEmbedding(nn.Module):
 
     Note: currently we are not using the padding index, but we can use it in the future for that we need to pass the padding index as an argument
     '''
-    def __init__(self, d_model: int, vocab_size : int, padding_idx: int = 0):
+    def __init__(self, d_model: int, vocab_size : int):
         super(InputEmbedding, self).__init__()
         self.d_model = d_model
         self.vocab_size = vocab_size    
-        self.embedding = nn.Embedding(self.vocab_size, self.d_model, padding_idx= padding_idx) # creating the embedding layer using the nn.Embedding class 
+        self.embedding = nn.Embedding(vocab_size, d_model) # creating the embedding layer using the nn.Embedding class 
         '''
         nn.Embedding: A simple lookup table that stores embeddings of a fixed dictionary and size.
         This module is often used to store word embeddings and retrieve them using indices. The input to the module is a list of indices, and the output is the corresponding word embeddings.
@@ -59,7 +37,7 @@ class InputEmbedding(nn.Module):
 
 # 2. Positional Encoding
 
-class PositionalEncoding(nn.Module):
+class PositionalEmbedding(nn.Module):
     
     ''' Transformers process input tokens in parallel and lack order information. 
         To address this, a positional encoding layer adds positional information using a positional encoding matrix, ensuring the model understands token order.
@@ -72,32 +50,37 @@ class PositionalEncoding(nn.Module):
 
     Note: the positional encoding is added to the input embedding vectors to add the positional information to the input tokens
     '''
-    def __init__(self, d_model: int, max_len: int = 512, dropout: float=0.1) -> None:
-        super(PositionalEncoding, self).__init__()
+    def __init__(self, d_model: int, max_seq_len: int, dropout: float):
+        super(PositionalEmbedding, self).__init__()
         self.d_model = d_model
-        self.max_len = max_len
+        self.max_seq_len = max_seq_len
         self.dropout = nn.Dropout(dropout) # adding the dropout layer to the positional encoding to prevent overfitting
         # self.positional_encoding = self.get_positional_encoding() # getting the positional encoding matrix
-        self.register_buffer('positional_encoding', self.get_positional_encoding())
 
+        pos_emb = torch.zeros(max_seq_len, d_model)
+        position = torch.arange(0, max_seq_len).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float()*(-math.log(10000.0)/d_model))
+        pos_emb[:, 0::2] = torch.sin(position*div_term)
+        pos_emb[:, 1::2] = torch.cos(position*div_term)
 
+        self.register_buffer('pos_emb', pos_emb.unsqueeze(0))
 
-    def get_positional_encoding(self):
-        '''
-        This function is used to create the positional encoding matrix
-        Returns:
-            positional_encoding: tensor: the positional encoding matrix of shape (max_len, d_model)
-        '''
-        positional_encoding = torch.zeros(self.max_len, self.d_model) # creating a matrix of zeros of shape (max_len, d_model)
+    # def get_positional_encoding(self):
+    #     '''
+    #     This function is used to create the positional encoding matrix
+    #     Returns:
+    #         positional_encoding: tensor: the positional encoding matrix of shape (max_len, d_model)
+    #     '''
+    #     positional_encoding = torch.zeros(self.max_len, self.d_model) # creating a matrix of zeros of shape (max_len, d_model)
 
-        position = torch.arange(0, self.max_len, dtype= torch.float).unsqueeze(1) # creating a position matrix of shape (max_len, 1) 
-        div_term = torch.exp(torch.arange(0, self.d_model, 2).float()*(-math.log(10000.0)/self.d_model)) # creating a division term
+    #     position = torch.arange(0, self.max_len, dtype= torch.float).unsqueeze(1) # creating a position matrix of shape (max_len, 1) 
+    #     div_term = torch.exp(torch.arange(0, self.d_model, 2).float()*(-math.log(10000.0)/self.d_model)) # creating a division term
 
-        positional_encoding[:, 0::2] = np.sin(position*div_term) # adding the sin values to the even indices
-        positional_encoding[:, 1::2] = np.cos(position*div_term) # adding the cos values to the odd indices
+    #     positional_encoding[:, 0::2] = np.sin(position*div_term) # adding the sin values to the even indices
+    #     positional_encoding[:, 1::2] = np.cos(position*div_term) # adding the cos values to the odd indices
 
-        positional_encoding = positional_encoding.unsqueeze(0)
-        return positional_encoding
+    #     positional_encoding = positional_encoding.unsqueeze(0)
+    #     return positional_encoding
 
     def forward(self, x):
         '''
@@ -109,40 +92,40 @@ class PositionalEncoding(nn.Module):
         Returns:
             x + positional_encoding: tensor: the input embedding vectors with the positional encoding added of shape (batch_size, seq_len, d_model)
         '''
-        x = x + self.positional_encoding[:, :x.shape[1], :].requires_grad_(False) #requires_grad_(False) is used to prevent the positional encoding matrix from being updated during the training
+        x = x + self.pos_emb[:, :x.size(1), :].requires_grad_(False) #requires_grad_(False) is used to prevent the positional encoding matrix from being updated during the training
         x = self.dropout(x)
         return x
 
 # 3. Layer Normalization
 
-class LayerNormalization(nn.Module):
-    ''' This class is used to create the layer normalization layer for the transformer model
-    Args:
-        eps: float: a value added to the denominator for numerical stability (default= 1e-6)
-            so that the layer normalization does not divide by zero
+# class LayerNormalization(nn.Module):
+#     ''' This class is used to create the layer normalization layer for the transformer model
+#     Args:
+#         eps: float: a value added to the denominator for numerical stability (default= 1e-6)
+#             so that the layer normalization does not divide by zero
 
-    Returns:
-        layer_norm: tensor: the layer normalization layer for the transformer model
-    '''
-    def __init__(self,  eps: float = 1e-6) -> None:
-        super(LayerNormalization, self).__init__()
-        self.eps = eps
-        self.alpha = nn.Parameter(torch.ones(1)) # creating a learnable parameter alpha: multiplicative
-        self.bias = nn.Parameter(torch.zeros(1)) # creating a learnable parameter bias: additive
+#     Returns:
+#         layer_norm: tensor: the layer normalization layer for the transformer model
+#     '''
+#     def __init__(self,  eps: float = 1e-6) -> None:
+#         super(LayerNormalization, self).__init__()
+#         self.eps = eps
+#         self.alpha = nn.Parameter(torch.ones(1)) # creating a learnable parameter alpha: multiplicative
+#         self.bias = nn.Parameter(torch.zeros(1)) # creating a learnable parameter bias: additive
 
-    def forward(self, x):
-        '''
-        This function is used to normalize the input embedding vectors
-        Args:
-            X: tensor: the input embedding vectors of shape (batch_size, seq_len, d_model)
-        returns:
-            layer_norm: tensor: normalized vectors (x*alpha + bias) of shape (batch_size, seq_len, d_model)
+#     def forward(self, x):
+#         '''
+#         This function is used to normalize the input embedding vectors
+#         Args:
+#             X: tensor: the input embedding vectors of shape (batch_size, seq_len, d_model)
+#         returns:
+#             layer_norm: tensor: normalized vectors (x*alpha + bias) of shape (batch_size, seq_len, d_model)
 
-        '''
-        mean = x.mean(dim = -1, keepdim=True) # dim = -1 is used to calculate the mean along the last dimension
-        std = x.std(dim = -1, keepdim=True)   
-        layer_norm = self.alpha*(x - mean)/(std + self.eps) + self.bias
-        return layer_norm
+#         '''
+#         mean = x.mean(dim = -1, keepdim=True) # dim = -1 is used to calculate the mean along the last dimension
+#         std = x.std(dim = -1, keepdim=True)   
+#         layer_norm = self.alpha*(x - mean)/(std + self.eps) + self.bias
+#         return layer_norm
 
 # 4. Feed Forward Network
 
@@ -159,13 +142,14 @@ class FFN(nn.Module):
         ffn: tensor: the feed forward network for the transformer model
         
     '''
-    def __init__(self, d_model: int , d_ff : int = 2048, dropout: float = 0) -> None:
+    def __init__(self, d_model: int , d_ff : int, dropout: float):
         super(FFN, self).__init__()
         self.d_model = d_model
         self.d_ff = d_ff
         self.dropout = nn.Dropout(dropout)
         self.fc1 = nn.Linear(self.d_model, self.d_ff) # creating the first fully connected linear layer 
         self.fc2 = nn.Linear(self.d_ff, self.d_model) # creating the second fully connected linear layer
+        self.relu = nn.ReLU() # creating the ReLU activation function
 
     def forward(self, x):
         '''
@@ -178,14 +162,17 @@ class FFN(nn.Module):
         Returns:
             ffn: tensor: the output of the feed forward network of shape (batch_size, seq_len, d_model)
         '''
-        x = nn.functional.relu(self.fc1(x)) # passing the input through the first linear layer and the ReLU activation function
-        x = self.dropout(x) # applying the dropout
-        ffn = self.fc2(x)
-        return ffn
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.dropout(x)
+        x = self.fc2(x)
+        return x
+
+
 
 # 5. Multi-Head Attention
 
-class MultiheadAttention(nn.Module):
+class MultiHeadAttention(nn.Module):
     '''
     - This class is used to create the multi-head attention layer for the transformer model
     - used to calculate the attention scores between the input embedding vectors
@@ -197,13 +184,14 @@ class MultiheadAttention(nn.Module):
         multihead_attention: tensor: the multi-head attention layer for the transformer model
     
     '''
-    def __init__(self, d_model: int, num_heads: int = 4, dropout: float = 0) -> None:
-        super(MultiheadAttention, self).__init__()
+    def __init__(self, d_model: int, num_heads: int, dropout: float):
+        super(MultiHeadAttention, self).__init__()
         self.d_model = d_model
         self.num_heads = num_heads
         self.dropout = nn.Dropout(dropout)
         # to make sure the d_model is divisible by the number of heads
-        assert d_model % self.num_heads == 0
+        assert d_model % num_heads == 0
+
         self.d_k = d_model // self.num_heads # d_k is the dimension of the key and value vectors
         '''
             - d_k is the dimension of the key and value vectors
@@ -213,57 +201,70 @@ class MultiheadAttention(nn.Module):
             - w_o is the weight matrix for the output vectors of shape (d_model, d_model)
             nn.Linear is used to create a linear layer and it applies a linear transformation y = xW^T + b
         '''
-        self.w_q = nn.Linear(self.d_model, self.d_model)
-        self.w_k = nn.Linear(self.d_model, self.d_model)
-        self.w_v = nn.Linear(self.d_model, self.d_model)
-        self.w_o = nn.Linear(self.d_model, self.d_model) #d_model = d_k*num_heads and d_k == d_v
+        self.w_q = nn.Linear(self.d_model, self.d_model, bias = False)
+        self.w_k = nn.Linear(self.d_model, self.d_model, bias = False)
+        self.w_v = nn.Linear(self.d_model, self.d_model, bias = False)
+        self.w_o = nn.Linear(self.d_model, self.d_model, bias= False) #d_model = d_k*num_heads and d_k == d_v
 
-        @staticmethod
-        def attention_block(query, key, value, mask, dropout: nn.Dropout):
-            '''
-            shape of the query is (batch_size, num_heads, seq_len, d_k)
-            extract the d_k dimension from the query tensor
-            '''
-            d_k = query.shape[-1]
-            attention_score = torch.matmul(query, key.transpose(-2, -1))/math.sqrt(d_k) # calculating the attention scores
-            if mask is not None:
-                attention_score = attention_score.masked_fill(mask == 0, -1e9) # applying the mask to the attention scores
-            attention_score = nn.softmax(attention_score, dim = -1) # applying the softmax function to the attention scores
-            if dropout is not None:
-                aention_score = dropout(attention_score) # applying the dropout to the attention scores
+    @staticmethod
+    def self_attention(q, k, v, mask, dropout: nn.Dropout):
+        '''
+        shape of the query is (batch_size, num_heads, seq_len, d_k)
+        extract the d_k dimension from the query tensor
+        '''
+        d_k = q.size(-1)
 
-            attention = torch.matmul(attention_score, value) # calculating the attention
-            return attention, attention_score
+        # calculating the attention scores
+        attn_score = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(d_k) # calculating the dot product of the query and key vectors
+        if mask is not None:
+            attn_score = attn_score.masked_fill(mask == 0, -1e9)
+        attn_score = attn_score.softmax(dim = -1)
+
+        if dropout is not None:
+            attn_score = dropout(attn_score)
+
+        output = torch.matmul(attn_score, v) # calculating the dot product of the attention scores and value vectors
+        return output, attn_score
 
 
-        def forward(self, q, k, v, mask):
-            '''
-            self.w_q(q) is used to calculate the query vectors or applies the linear transformation to the query vectors
-            query = q @ w_q^T + b_q   
-            q: tensor: the query vectors of shape (batch_size, seq_len, d_model)
-            w_q: tensor: the weight matrix for the query vectors of shape (d_model, d_model)
-            b_q: tensor: the bias for the query vectors of shape (d_model)
-            query: tensor: the query vectors after the linear transformation of shape (batch_size, seq_len, d_model)
-                
-            '''
-            query = self.w_q(q) 
-            key = self.w_k(k)
-            value = self.w_v(v)
-            '''
-            - splitting the query, key, and value vectors into a number of heads so that we can calculate the attention scores in parallel
-            - splitingn the heads allows the model to focus on different aspects of the input sequence
-            - view is used to change the shape of the tensor to (batch_size, seq_len, num_heads, d_k)
-            - permute is used to change the dimensions of the tensor to (batch_size, num_heads, seq_len, d_k) : basically it's changing the position dimensions
-            '''
-            query = query.view(q.shape[0], q.shape[1], self.num_heads, self.d_k).permute(0, 2, 1, 3) 
-            key = key.view(k.shape[0], k.shape[1], self.num_heads, self.d_k).permute(0, 2, 1, 3)
-            value = value.view(v.shape[0], v.shape[1], self.num_heads, self.d_k).permute(0, 2, 1, 3)
+    def forward(self, q, k, v, mask):
+        '''
+        self.w_q(q) is used to calculate the query vectors or applies the linear transformation to the query vectors
+        query = q @ w_q^T + b_q   
+        q: tensor: the query vectors of shape (batch_size, seq_len, d_model)
+        w_q: tensor: the weight matrix for the query vectors of shape (d_model, d_model)
+        b_q: tensor: the bias for the query vectors of shape (d_model)
+        query: tensor: the query vectors after the linear transformation of shape (batch_size, seq_len, d_model)
+            
+        '''
+        Q = self.w_q(q)
+        K = self.w_k(k)
+        V = self.w_v(v)
 
-            x, self.attention_score = MultiheadAttention.attention_block(query, key, value, mask, self.dropout)
+        #  split the d_model into num_heads
+        batch_size = Q.size(0)
+        max_seq_len = Q.size(1)
+        
 
-            x = x.permute(0, 2, 1, 3).contiguous().view(q.shape[0], -1, self.d_model) # changing the dimensions of the tensor back to (batch_size, seq_len, d_model)
-            x = self.w_o(x)
-            return x
+        '''
+        - splitting the query, key, and value vectors into a number of heads so that we can calculate the attention scores in parallel
+        - splitingn the heads allows the model to focus on different aspects of the input sequence
+        - view is used to change the shape of the tensor to (batch_size, seq_len, num_heads, d_k)
+        - permute is used to change the dimensions of the tensor to (batch_size, num_heads, seq_len, d_k) : basically it's changing the position dimensions
+        '''
+        Q = Q.view(batch_size, max_seq_len, self.num_heads, self.d_k).transpose(1,2)
+        K = K.view(batch_size, max_seq_len, self.num_heads, self.d_k).transpose(1,2)
+        V = V.view(batch_size, max_seq_len, self.num_heads, self.d_k).transpose(1,2) 
+
+        attn_output, attnt_score = MultiHeadAttention.self_attention(Q, K, V, mask, self.dropout)
+
+        # concatenating the heads
+        attn_output = attn_output.transpose(1, 2).contiguous().view(batch_size, max_seq_len, self.d_model)
+        # apply the final linear layer
+        attn_output = self.w_o(attn_output)
+        return attn_output
+
+       
         
 # 6. Residual Connection
 
@@ -280,11 +281,11 @@ class ResidualConnection(nn.Module):
         Returns:
             residual_connection: tensor: the residual connection for the transformer model
     '''
-    def __init__(self, dropout: float) -> None:
+    def __init__(self, features: int, dropout: float) -> None:
         super(ResidualConnection, self).__init__()
         
         self.dropout = nn.Dropout(dropout)
-        self.norm = LayerNormalization()
+        self.norm = nn.LayerNorm(features)
 
     def forward(self, x, sublayer):
         '''
@@ -295,7 +296,9 @@ class ResidualConnection(nn.Module):
         Returns:
             residual_connection: tensor: the output of the residual connection of shape (batch_size, seq_len, d_model)
         '''
-        return x + self.dropout(sublayer(self.norm(x)))
+        x = self.norm(x)
+        x = x + self.dropout(sublayer(x))
+        return x
 
 # Encoder Block
 class EncoderBlock(nn.Module):
@@ -312,12 +315,15 @@ class EncoderBlock(nn.Module):
     Returns:
         encoder_block: tensor: the encoder block for the transformer model
     '''        
-    def __init__(self, self_attention: MultiheadAttention, feed_forward_network: FFN, dropout: float) -> None:
+    def __init__(self, features: int, self_attn: MultiHeadAttention,feed_forward: FFN, dropout: float):
         super(EncoderBlock, self).__init__()
-        self.self_attention = self_attention
-        self.feed_forward_network = feed_forward_network
-        self.residual_connection_1 = ResidualConnection(dropout)
-        self.residual_connection_2 = ResidualConnection(dropout)
+        self.features = features
+        self.self_attention = self_attn
+        self.feed_forward_network = feed_forward
+        self.residual_connection_1 = ResidualConnection(features, dropout)
+        self.residual_connection_2 = ResidualConnection(features, dropout)
+
+
 
     def forward(self, x, mask):
         '''
@@ -331,6 +337,7 @@ class EncoderBlock(nn.Module):
         x = self.residual_connection_2(x, self.feed_forward_network)
         return x
 
+
 # Encoder consists of N encoder blocks 
 class Encoder(nn.Module):
     '''
@@ -340,12 +347,13 @@ class Encoder(nn.Module):
     Returns:
         encoder: tensor: the encoder for the transformer model
     '''
-    def __init__(self, encoder_blocks: nn.ModuleList) -> None:
+    def __init__(self, features: int, layers: nn.ModuleList) -> None:
         super(Encoder, self).__init__()
-        self.encoder_blocks = encoder_blocks
-        self.norm = LayerNormalization()
+        self.features = features
+        self.layers = layers
+        self.norm = nn.LayerNorm(features)
 
-    def forward(self, x, mask):
+    def forward(self, x, source_mask):
         '''
         args:
             x: tensor: the input embedding vectors of shape (batch_size, seq_len, d_model)
@@ -353,8 +361,8 @@ class Encoder(nn.Module):
         Returns:
             encoder: tensor: the output of the encoder of shape (batch_size, seq_len, d_model)
         '''
-        for encoder_block in self.encoder_blocks: # iterating through the encoder blocks (layers)
-            x = encoder_block(x, mask)
+        for encoder_block in self.layers: # iterating through the encoder blocks (layers)
+            x = encoder_block(x, source_mask)
         return self.norm(x)
 
 # Decoder Block
@@ -375,15 +383,21 @@ class DecoderBlock(nn.Module):
     Returns:
         decoder_block: tensor: the decoder block for the transformer model
     '''
-    def __init__(self, self_attention: MultiheadAttention, cross_attention: MultiheadAttention, feed_forward_network: FFN, dropout: float) -> None:
+    def __init__(self, features: int, self_attn: MultiHeadAttention, cross_attn: MultiHeadAttention, feed_forward: FFN, dropout: float):
         super(DecoderBlock, self).__init__()
-        self.self_attention = self_attention
-        self.cross_attention = cross_attention
-        self.feed_forward_network = feed_forward_network
-        # Three residual connections
-        self.residual_connection = nn.ModuleList([ResidualConnection(dropout) for _ in range(3)])
+        self.features = features
+        self.self_attn = self_attn
+        self.cross_attn = cross_attn
+        self.feed_forward = feed_forward
+        self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x, encoder_output, src_mask, tgt_mask):
+        self.residual_connection1 = ResidualConnection(features, dropout)
+        self.residual_connection2 = ResidualConnection(features, dropout)
+        self.residual_connection3 = ResidualConnection(features, dropout)
+ 
+
+
+    def forward(self, x, enc_out, src_mask, tgt_mask):
         '''
         args:
             x: tensor: the input embedding vectors of shape (batch_size, seq_len, d_model)
@@ -393,10 +407,11 @@ class DecoderBlock(nn.Module):
         Returns:
             decoder_block: tensor: the output of the decoder block of shape (batch_size, seq_len, d_model)
         '''
-        x = self.residual_connection[0](x, lambda x: self.self_attention(x, x, x, tgt_mask))
-        x = self.residual_connection[1](x, lambda x: self.cross_attention(x, encoder_output, encoder_output, src_mask))
-        x = self.residual_connection[2](x, self.feed_forward_network)
+        x = self.residual_connection1(x, lambda x: self.self_attn(x, x, x, tgt_mask))
+        x = self.residual_connection2(x, lambda x: self.cross_attn(x, enc_out, enc_out, src_mask))
+        x = self.residual_connection3(x, self.feed_forward)
         return x
+
 
 # Decoder consists of N decoder blocks
 class Decoder(nn.Module):
@@ -407,12 +422,13 @@ class Decoder(nn.Module):
     Returns:
         decoder: tensor: the decoder for the transformer model
     '''
-    def __init__(self, decoder_blocks: nn.ModuleList) -> None:
+    def __init__(self, features: int, layers: nn.ModuleList):
         super(Decoder, self).__init__()
-        self.decoder_blocks = decoder_blocks
-        self.norm = LayerNormalization()
+        self.features = features
+        self.decoder_blocks = layers
+        self.norm = nn.LayerNorm(features)
 
-    def forward(self, x, encoder_output, src_mask, tgt_mask):
+    def forward(self, x, enc_out, src_mask, tgt_mask):
         '''
         args:
             x: tensor: the input embedding vectors of shape (batch_size, seq_len, d_model)
@@ -423,8 +439,9 @@ class Decoder(nn.Module):
             decoder: tensor: the output of the decoder of shape (batch_size, seq_len, d_model)
         '''
         for decoder_block in self.decoder_blocks: # iterating through the decoder blocks (layers)
-            x = decoder_block(x, encoder_output, src_mask, tgt_mask)
+            x = decoder_block(x, enc_out, src_mask, tgt_mask)
         return self.norm(x)
+          
 
 # Linear Layer
 class LinearLayer(nn.Module):
@@ -438,7 +455,9 @@ class LinearLayer(nn.Module):
     '''
     def __init__(self, d_model: int, vocab_size: int) -> None:
         super(LinearLayer, self).__init__()
-        self.lin = nn.Linear(d_model, vocab_size)
+        self.d_model = d_model
+        self.vocab_size = vocab_size
+        self.linear = nn.Linear(d_model, vocab_size)
 
     def forward(self, x):
         '''
@@ -448,7 +467,7 @@ class LinearLayer(nn.Module):
             linear_layer: tensor: the output of the linear layer of shape (batch_size, seq_len, vocab_size)
             also apply the softmax function to the output to get the probabilities of the output tokens
         '''
-        return torch.log_softmax(self.lin(x), dim=-1) # log_softmax is used to calculate the log of the softmax function for numerical stability
+        return self.linear(x)
 
 
 # Now connect all the components to create the transformer model
@@ -466,15 +485,16 @@ class Transformer(nn.Module):
     Returns:
         transformer: tensor: the transformer model
     '''   
-    def __init__(self, src_embedding: InputEmbedding, tgt_embedding: InputEmbedding, src_postional_encoding: PositionalEncoding, tgt_postional_encoding: PositionalEncoding, encoder: Encoder, decoder: Decoder, linear_layer: LinearLayer) -> None:
+    def __init__(self, encoder: Encoder, decoder: Decoder, src_embed: InputEmbedding, tgt_embed: InputEmbedding, src_pos_embed: PositionalEmbedding, tgt_pos_embed: PositionalEmbedding, linearlayer: LinearLayer) -> None:
         super(Transformer, self).__init__()
-        self.src_embedding = src_embedding
-        self.tgt_embedding = tgt_embedding
-        self.src_postional_encoding = src_postional_encoding
-        self.tgt_postional_encoding = tgt_postional_encoding
         self.encoder = encoder
         self.decoder = decoder
-        self.linear_layer = linear_layer
+        self.src_embedding = src_embed
+        self.trg_embedding = tgt_embed
+        self.src_postional_encoding = src_pos_embed
+        self.trg_postional_encoding = tgt_pos_embed
+        self.linear = linearlayer
+
 
     def encode(self, src, src_mask):
         '''
@@ -484,10 +504,12 @@ class Transformer(nn.Module):
         Returns:
             encoder_output: tensor: the output of the encoder of shape (batch_size, seq_len, d_model)
         '''
-        src = self.src_postional_encoding(self.src_embedding(src))
+
+        src = self.src_embedding(src)
+        src = self.src_postional_encoding(src)
         return self.encoder(src, src_mask)
     
-    def decode(self, target, encoder_output, src_mask, tgt_mask):
+    def decode(self, target, enc_out, src_mask, tgt_mask):
         '''
         args:
             trg: tensor: the target tokens of shape (batch_size, seq_len)
@@ -497,66 +519,70 @@ class Transformer(nn.Module):
         Returns:
             decoder_output: tensor: the output of the decoder of shape (batch_size, seq_len, d_model)
         '''
-        target = self.trg_postional_encoding(self.trg_embedding(target))
-        return self.decoder(target, encoder_output, src_mask, tgt_mask)
+        target = self.trg_embedding(target)
+        target = self.trg_postional_encoding(target)
+        return self.decoder(target, enc_out, src_mask, tgt_mask)
+    
 
-    def linear_(self, x):
+    def linearlayer(self, x):
         '''
         args:
             x: tensor: the input embedding vectors of shape (batch_size, seq_len, d_model)
         Returns:
             linear_layer: tensor: the output of the linear layer of shape (batch_size, seq_len, vocab_size)
         '''
-        return self.linear_layer(x)
+        return self.linear(x)
 
 
 # building the transformer model
-def build_transformer(src_vocab_size:int, tgt_vocab_size:int, src_seq_len: int, tgt_seq_len: int, d_model: int = 512, num_heads: int = 8, d_ff: int = 2048, num_encoder_blocks: int = 6, num_decoder_blocks: int = 6, dropout: float = 0.1) -> Transformer:
+def trans_model(src_vocab, tgt_vocab, src_seq_len, tgt_seq_len, d_model:int = 512, num_heads: int = 8, d_ff: int = 2048, num_layers: int = 6, dropout: float = 0.1):
     '''
     This function is used to build the transformer model
     Args:
-        src_vocab_size: int: the size of the source vocabulary
-        tgt_vocab_size: int: the size of the target vocabulary
-        src_seq_len: int: the maximum length of the source sequence
-        tgt_seq_len: int: the maximum length of the target sequence
+        src_vocab: int: the size of the source vocabulary
+        tgt_vocab: int: the size of the target vocabulary
+        src_seq_len: int: the length of the source sequence
+        tgt_seq_len: int: the length of the target sequence
         d_model: int: the dimension of the model (default= 512) also known as the embedding size
-        num_heads: int: the number of attention heads (default= 4)
+        num_heads: int: the number of attention heads (default= 8)
         d_ff: int: the dimension of the feed forward network (default= 2048)
-        num_encoder_blocks: int: the number of encoder blocks (default= 6)
-        num_decoder_blocks: int: the number of decoder blocks (default= 6)
+        num_layers: int: the number of encoder and decoder blocks (default= 6)
         dropout: float: the dropout rate (default= 0.1)
-    Returns:
-        transformer: tensor: the transformer model
     '''
-    src_embedding = InputEmbedding(d_model, src_vocab_size)
-    tgt_embedding = InputEmbedding(d_model, tgt_vocab_size)
-    src_postional_encoding = PositionalEncoding(d_model, src_seq_len, dropout)
-    tgt_postional_encoding = PositionalEncoding(d_model, tgt_seq_len, dropout)
+    # creating the input embedding layer for the source and target
+    source_embedding = InputEmbedding(d_model, src_vocab)
+    target_embedding = InputEmbedding(d_model, tgt_vocab)
+    src_pos_embed = PositionalEmbedding(d_model, src_seq_len, dropout)
+    tgt_pos_embed = PositionalEmbedding(d_model, tgt_seq_len, dropout)
 
-    encoder_blocks = nn.ModuleList([EncoderBlock(MultiheadAttention(d_model, num_heads, dropout), FFN(d_model, d_ff, dropout), dropout) for _ in range(num_encoder_blocks)])
+    # creating the encoder and decoder blocks
+    encoder_blocks = []
+    for i in range(num_layers):
+        enc_self_attn = MultiHeadAttention(d_model, num_heads, dropout)
+        ffn = FFN(d_model, d_ff, dropout)
+        encoder_block = EncoderBlock(d_model, enc_self_attn, ffn, dropout)
+        encoder_blocks.append(encoder_block)
 
-    encoder = Encoder(encoder_blocks)
+    # creating decoder blocks
+    decoder_blocks = []
+    for i in range(num_layers):
+        dec_self_attn = MultiHeadAttention(d_model, num_heads, dropout)
+        dec_cross_attn = MultiHeadAttention(d_model, num_heads, dropout)
+        dec_ffn = FFN(d_model, d_ff, dropout)
+        dec_block = DecoderBlock(d_model, dec_self_attn, dec_cross_attn, dec_ffn, dropout)
+        decoder_blocks.append(dec_block)
 
-    decoder_blocks = nn.ModuleList([DecoderBlock(MultiheadAttention(d_model, num_heads, dropout), MultiheadAttention(d_model, num_heads, dropout), FFN(d_model, d_ff, dropout), dropout) for _ in range(num_decoder_blocks)]) # fist one for self-attention and second one for cross-attention
+    # creating the encoder and decoder
+    encoder = Encoder(d_model, nn.ModuleList(encoder_blocks))
+    decoder = Decoder(d_model, nn.ModuleList(decoder_blocks))
 
-    decoder = Decoder(decoder_blocks)
+    # creating the linear layer
+    linearlayer = LinearLayer(d_model, tgt_vocab)
+    # create the transformer model
+    transformer = Transformer(encoder, decoder, source_embedding, target_embedding, src_pos_embed, tgt_pos_embed, linearlayer)
 
-    linear_layer = LinearLayer(d_model, tgt_vocab_size)
+    for parameter in transformer.parameters():
+        if parameter.dim() > 1:
+            nn.init.xavier_uniform_(parameter)
 
-    # creating the transformer model
-    transformer = Transformer(src_embedding, tgt_embedding, src_postional_encoding, tgt_postional_encoding, encoder, decoder, linear_layer)
-
-    # Intializing the weights
-    for p in transformer.parameters():
-        if p.dim() > 1:
-            nn.init.xavier_uniform_(p)
     return transformer
-
-
-
-
-
-
-            
-
-    
